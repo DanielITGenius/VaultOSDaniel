@@ -1,0 +1,21 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const AgentMarks = require('../public/agent-marks');
+const { PROFILE_IDS } = require('../lib/agents');
+
+test('a single-colour 24px mark for every profile id', () => {
+  for (const id of PROFILE_IDS) {
+    const s = AgentMarks.svg(id);
+    assert.match(s, /^<svg [^>]*viewBox="0 0 24 24"/, id);
+    assert.match(s, /currentColor/, id);
+    assert.match(s, /aria-hidden="true"/, id);
+    assert.doesNotMatch(s, /<script|\son\w+=|#[0-9a-f]{3,6}\b|url\(/i, id);
+  }
+});
+
+test('each agent has its own mark; an unknown id gets the Other agent mark', () => {
+  const marks = PROFILE_IDS.map((id) => AgentMarks.svg(id));
+  assert.equal(new Set(marks).size, PROFILE_IDS.length);
+  assert.equal(AgentMarks.svg('nope'), AgentMarks.svg('custom'));
+});

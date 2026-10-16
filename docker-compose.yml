@@ -1,0 +1,238 @@
+name: vault
+
+services:
+  # Retired 2026-07-20: Obsidian runs natively on the desktop, synced via
+  # Syncthing. Volumes obsidian_config / obsidian_appdata are left declared
+  # below so the data is not orphaned if this is ever restored.
+  # obsidian:
+  #   image: sytone/obsidian-remote:latest
+  #   container_name: vault-obsidian
+  #   restart: unless-stopped
+  #   shm_size: '1gb'
+  #   volumes:
+  #     - ./vault:/vaults
+  #     - /root/.local/bin/claude:/usr/local/bin/claude
+  #     - obsidian_config:/config
+  #     - obsidian_appdata:/root/.config/obsidian
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TITLE=vault
+
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: vault-syncthing
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./vault:/vault
+      - syncthing_data:/var/syncthing
+    ports:
+      - "22000:22000/tcp"
+      - "22000:22000/udp"
+      - "21027:21027/udp"
+
+  # Retired 2026-07-20: superseded by the code-server terminal. Was also an
+  # unauthenticated root shell published on 0.0.0.0:7681.
+  # ttyd:
+  #   build: ./ttyd
+  #   image: vault-ttyd:latest
+  #   container_name: vault-ttyd
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./vault:/vault
+  #     - /root/.local/bin/claude:/usr/local/bin/claude
+  #   working_dir: /vault
+  #   ports:
+  #     - "7681:7681"
+
+  board:
+    build: ./board
+    image: vault-board:latest
+    container_name: vault-board
+    hostname: vault-workbench
+    restart: unless-stopped
+    # tini as PID 1: node doesn't reap orphans, so a program still running when
+    # its terminal is closed (e.g. claude) would otherwise linger as a zombie.
+    init: true
+    # Must match the vault's owner (and code-server's user). Without this the
+    # board runs as root and every task.md / Board.md it rewrites becomes
+    # root:root, locking coder out of its own vault.
+    user: "1000:1000"
+    environment:
+      - VAULT_DIR=/vault
+      - PORT=8080
+      - TRUST_PROXY=1
+      # SECURE_COOKIE=1 since 2026-09-20: Cloudflare "Always Use HTTPS" is on for
+      # the ctrlaltautomate.com zone, so the client leg to vb.ctrlaltautomate.com
+      # is HTTPS. Consequence, accepted by Ben: no cookie is issued over plain
+      # HTTP, so login via http://192.168.1.188:7684 or Caddy :80 no longer
+      # works. The vb hostname is the only way in. Set back to 0 to restore
+      # LAN login.
+      - SECURE_COOKIE=1
+      # Workbench terminal (/api/term websocket). Needs a signed-in session and
+      # a same-origin Origin; the same-box read path never gets a shell.
+      - TERMINAL=1
+      - HOME=/home/coder
+      - SHELL=/bin/bash
+      # Spreadsheets in Files: where a save keeps each file's one previous
+      # version (the sheet-backups volume below).
+      - SHEET_BACKUP_DIR=/app/sheet-backups
+      - DATA_DIR=/app
+      - LOCAL_READ=1
+      - TZ=Europe/London
+      - ALLOWED_HOSTS=vb.ctrlaltautomate.com,192.168.1.188,localhost,127.0.0.1
+    volumes:
+      - ./vault:/vault
+      - ./board/config.json:/app/config.json
+      - ./board/lockout.json:/app/lockout.json
+      - ./board/workspace-visibility.json:/app/workspace-visibility.json
+      # Read-only so the container can never write back into source; lets
+      # public/ edits (styles.css, app.js, index.html) go live on a plain
+      # `docker restart vault-board` instead of a full image rebuild.
+      - ./board/public:/app/public:ro
+      # Same deal for the backend. Without this line server.js is only what the
+      # Dockerfile's `COPY server.js` baked in, so an API change needs a full image
+      # rebuild — and a rebuild also sweeps in whatever else is sitting uncommitted
+      # in ./board. Mounted read-only, it goes live on `docker restart vault-board`
+      # exactly like public/ does. Added 2026-09-18 for the subtask/batch API.
+      - ./board/server.js:/app/server.js:ro
+      # The spreadsheet modules server.js requires (lib/sheet-*.js), mounted the
+      # same way so a lib/ change ships on `docker restart vault-board` too.
+      # (They are also COPY'd into the image; exceljs/jszip still need a rebuild.)
+      - ./board/lib:/app/lib:ro
+      # Spreadsheet backups, outside the vault so Syncthing never syncs them.
+      # The host folder must be uid 1000's or every save is a 500:
+      #   install -d -o 1000 -g 1000 /opt/vault/board/sheet-backups
+      - ./board/sheet-backups:/app/sheet-backups
+      # code-server's home: the terminal's `claude` is already logged in and sees
+      # the same ~/.claude skills, settings and history as code-server.
+      - code_server_data:/home/coder
+      - /root/.local/bin/claude:/usr/local/bin/claude:ro
+    ports:
+      - "7684:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+  # Career Ops hub (added 2026-07-24): serves /opt/vault/vault/Career-Ops as a
+  # readable site + the Proxmox homelab build companion. Zero-dependency node
+  # server, so no image build — stock node:22-alpine running server.mjs.
+  # Same user rule as the board: must be 1000:1000 or the homelab progress
+  # file it writes into the vault becomes root:root.
+  career:
+    image: node:22-alpine
+    container_name: vault-career
+    restart: unless-stopped
+    user: "1000:1000"
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    environment:
+      - CAREER_DIR=/career
+      - PORT=8080
+    volumes:
+      - ./career:/app:ro
+      - ./vault/Career-Ops:/career
+    ports:
+      - "7686:8080"
+
+  code-server:
+    image: codercom/code-server:latest
+    container_name: vault-code
+    restart: unless-stopped
+    command: --app-name "Code Editor" --i18n /i18n.json
+    environment:
+      - HASHED_PASSWORD=${HASHED_PASSWORD}
+    volumes:
+      - ./vault:/vault
+      - code_server_data:/home/coder
+      - /root/.local/bin/claude:/usr/local/bin/claude
+      - ./code-server-i18n.json:/i18n.json:ro
+    user: "1000:1000"
+    working_dir: /vault
+    ports:
+      - "7683:8080"
+
+  # Retired 2026-07-20: existed only to put a login page in front of the
+  # Obsidian container, which is gone.
+  # gate:
+  #   build: ./obsidian-gate
+  #   image: vault-gate:latest
+  #   container_name: vault-gate
+  #   restart: unless-stopped
+  #   environment:
+  #     - TARGET=http://vault-obsidian:8080
+  #     - PORT=8080
+  #   volumes:
+  #     - ./obsidian-gate/config.json:/app/config.json
+  #   ports:
+  #     - "7685:8080"
+  #   depends_on:
+  #     - obsidian
+
+  caddy:
+    image: caddy:latest
+    container_name: vault-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8384:8384"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    # depends_on: obsidian removed 2026-07-20 (service retired). The Caddyfile
+    # is unchanged, so :80 still proxies to vault-obsidian and will 502;
+    # :8384 (Syncthing UI) is unaffected.
+
+# Volume keys are pinned to their existing physical names so renaming the
+# compose project from 'obsidian' to 'vault' does NOT orphan the data.
+#
+# external: true added 2026-09-20. Without it Compose owns these volumes and
+# `docker compose down -v` DELETES the four that a live service references
+# -- caddy_data, caddy_config, syncthing_data, code_server_data. Verified in an
+# isolated scratch project: Compose resolves them by effective name, not by the
+# stale com.docker.compose.project=obsidian label, so the pinned names are no
+# protection. That would take code-server's /home/coder (2.4G, including
+# .ssh/id_ed25519, which exists nowhere else), Caddy's cert store and
+# Syncthing's database.
+#
+# obsidian_config / obsidian_appdata were already safe: their service is
+# commented out, and an unreferenced declared volume is dropped from the
+# resolved config and left alone by `down -v` (also verified). They carry
+# external: true anyway so the guarantee does not depend on that.
+#
+# What external: true does: Compose never creates and never deletes these
+# volumes; `down -v` skips them. Deleting one now needs an explicit
+# `docker volume rm`.
+#
+# Cost: on a rebuild from scratch `up` fails with `external volume ... not
+# found` until they are pre-created:
+#   for v in caddy_data caddy_config syncthing_data code_server_data \
+#            obsidian_config obsidian_appdata; do
+#     docker volume create "obsidian_$v"; done
+volumes:
+  caddy_data:
+    external: true
+    name: obsidian_caddy_data
+  caddy_config:
+    external: true
+    name: obsidian_caddy_config
+  syncthing_data:
+    external: true
+    name: obsidian_syncthing_data
+  code_server_data:
+    external: true
+    name: obsidian_code_server_data
+  obsidian_config:
+    external: true
+    name: obsidian_obsidian_config
+  obsidian_appdata:
+    external: true
+    name: obsidian_obsidian_appdata

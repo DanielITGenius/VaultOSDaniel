@@ -1,0 +1,16 @@
+# Words that must never leave the homelab: one extended regex per line, matched case-sensitively.
+# Read by scripts/publish.sh (refuses to publish on any hit) and test/starter-kit.test.js.
+# This file is itself never published.
+\bBen\b
+Lancashire
+Sucden
+ctrlaltautomate
+outageindex
+gitea\.home
+benutting
+Career-Ops
+Zettelkasten
+Proxmox
+PROXMOX
+192\.168\.
+\b(INC|VIT|CHG)[0-9]+\b

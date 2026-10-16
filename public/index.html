@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>VaultOS</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="preload" href="/fonts/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="login" class="login hidden">
+    <form id="login-form" class="login-card">
+      <h1>Vault<span class="login-brand-os">OS</span></h1>
+      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required autofocus>
+      <button type="submit">Sign in</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </div>
+
+  <div id="app" class="hidden">
+    <header>
+      <div class="brand">Vault<span class="brand-os">OS</span></div>
+      <nav class="modes">
+        <button id="mode-today" class="mode active" data-mode="today">Today</button>
+        <button id="mode-board" class="mode" data-mode="board">Board</button>
+        <button id="mode-files" class="mode" data-mode="files">Files</button>
+        <button id="mode-kb" class="mode" data-mode="kb">Knowledge&nbsp;Base</button>
+      </nav>
+      <input type="search" id="search" placeholder="Search tasks…">
+      <div class="spacer"></div>
+      <span id="count" class="count"></span>
+      <!-- The Pomodoro's time left and target, in every mode while a session runs or is paused (today.js). -->
+      <button type="button" id="today-chip" class="today-chip hidden"><span class="tc-time"></span><span class="tc-what"> · <span class="tc-label"></span></span></button>
+      <!-- Appears only when something is narrowing the board. Three filters can stack
+           (search text, folder checkboxes, batch chip) and clearing one used to leave the
+           others on with nothing on screen saying so — this is the one way out. -->
+      <button id="clear-filters" class="clear-filters hidden" type="button" title="Show every task again">Clear all filters</button>
+      <!-- Everything occasional (workspace, folder filter, columns, appearance)
+           lives in the Settings sheet; Refresh is used too often to bury there. -->
+      <button type="button" id="refresh" class="ghost" title="Refresh: reloads VaultOS, picking up app updates (the board also rescans itself every few seconds)" aria-label="Refresh"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <button id="termbtn" class="ghost" title="Terminal (Ctrl+`)" aria-label="Terminal" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></button>
+      <button id="setbtn" class="ghost" title="Settings" aria-haspopup="dialog" aria-controls="setsheet"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="setbtn-lbl">Settings</span><span id="set-dot" class="set-dot hidden" aria-hidden="true"></span></button>
+      <button id="logout" class="ghost">Sign out</button>
+    </header>
+
+    <!-- Settings sheet: one screen for everything the header used to carry as
+         separate popovers (which could stack on top of each other). Sections
+         reuse the old popovers' ids, so their render code is unchanged. -->
+    <div class="ss-scrim hidden" id="ss-scrim"></div>
+    <div class="setsheet hidden" id="setsheet" role="dialog" aria-modal="true" aria-labelledby="ss-title">
+      <div class="ss-head">
+        <h2 id="ss-title">Settings</h2>
+        <button type="button" class="ss-close" id="ss-close" aria-label="Close settings"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <div class="ss-body">
+        <nav class="ss-nav" id="ss-nav" aria-label="Settings sections">
+          <button type="button" data-sec="ws">Boards<span class="ss-sub" id="ws-current"></span></button>
+          <button type="button" data-sec="folders" id="ssn-folders">Filter by folder<span id="filter-badge" class="n hidden"></span></button>
+          <button type="button" data-sec="cols" id="ssn-cols">Columns<span id="cols-badge" class="n hidden"></span></button>
+          <button type="button" data-sec="look">Appearance</button>
+          <button type="button" data-sec="features">Features</button>
+          <button type="button" data-sec="agent">Agent</button>
+          <button type="button" data-sec="skills">Skills</button>
+          <button type="button" data-sec="password">Password</button>
+        </nav>
+        <div class="ss-panes">
+          <!-- Boards: the switcher (visible boards, from /api/workspaces), then the
+               managing list (every board, from /api/settings). app.js fills both. -->
+          <section class="ss-pane ss-boards" data-sec="ws">
+      <div class="filter-actions">
+        <span class="lbl">Switch to</span>
+      </div>
+      <div id="ws-list" class="filter-list"></div>
+      <div id="bd-manage" class="bd-manage">
+        <div class="filter-actions"><span class="lbl">Your boards</span></div>
+        <p class="su-hint">Rename, reorder or hide a board. VaultOS opens on the first one that isn't hidden.</p>
+        <div id="bd-list" class="bd-list"></div>
+        <p class="su-err" id="bd-err" aria-live="polite"></p>
+        <form id="bd-add" class="su-field bd-add" novalidate>
+          <label for="bd-add-name">Add a board</label>
+          <div class="bd-addrow">
+            <input id="bd-add-name" class="su-input" type="text" maxlength="60" placeholder="Board name" autocomplete="off" aria-describedby="bd-add-hint bd-add-name-err">
+            <button type="submit" class="su-btn">Add board</button>
+          </div>
+          <p class="su-hint" id="bd-add-hint">A new folder with a board's starter files.</p>
+          <p class="su-err" id="bd-add-name-err" aria-live="polite"></p>
+        </form>
+        <form id="bd-existing" class="su-field bd-add" novalidate>
+          <label for="bd-existing-dir">Add an existing folder</label>
+          <div class="bd-addrow" id="bd-existing-row">
+            <select id="bd-existing-dir" class="su-input" aria-describedby="bd-existing-hint bd-existing-err"></select>
+            <button type="submit" class="su-btn">Add folder</button>
+          </div>
+          <p class="su-hint" id="bd-existing-hint"></p>
+          <p class="su-err" id="bd-existing-err" aria-live="polite"></p>
+        </form>
+      </div>
+          </section>
+          <section class="ss-pane" data-sec="folders">
+      <input type="search" id="filter-search" placeholder="Search folders…">
+      <div class="filter-actions">
+        <button id="filter-all" class="linklike">Select all</button>
+        <button id="filter-none" class="linklike">Clear</button>
+      </div>
+      <div id="filter-list" class="filter-list"></div>
+          </section>
+          <section class="ss-pane" data-sec="cols">
+      <div class="filter-actions">
+        <span class="lbl">On the board</span>
+        <button id="cols-all" class="linklike">Show all</button>
+      </div>
+      <label class="filter-item" id="subtasks-row">
+        <input type="checkbox" id="show-subtasks" checked>
+        <span>Subtasks</span>
+        <span class="n" id="subtasks-count"></span>
+      </label>
+      <p class="pop-hint">Untick to fold them into their parent, which keeps its <b>N subtasks</b> chip — click that chip to bring the batch back.</p>
+      <div class="filter-actions"><span class="lbl">Columns</span></div>
+      <div id="cols-list" class="filter-list"></div>
+          </section>
+          <section class="ss-pane ss-look" data-sec="look">
+      <div class="row">
+        <div class="lbl">Theme</div>
+        <div class="seg" id="segTheme">
+          <button data-v="dark">Dark</button>
+          <button data-v="light">Sepia</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl">Reading font</div>
+        <div class="seg" id="segFont">
+          <button data-v="system">Standard</button>
+          <button data-v="dyslexic">OpenDyslexic</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl">Text size</div>
+        <div class="stepper">
+          <button id="fsDown" aria-label="Smaller text">A−</button>
+          <span class="val" id="fsVal">100%</span>
+          <button id="fsUp" aria-label="Larger text">A+</button>
+        </div>
+      </div>
+      <!-- Where a terminal button opens a shell. Hidden on a phone, where a
+           second window is just another browser tab: there it's always the dock. -->
+      <div class="row" id="term-where-row">
+        <div class="lbl">Terminals open in</div>
+        <div class="seg" id="segTermWhere">
+          <button data-v="window">Window</button>
+          <button data-v="dock">Dock</button>
+        </div>
+      </div>
+      <div class="row" id="term-sound-row">
+        <div class="lbl">Agent sound</div>
+        <div class="seg" id="segTermSound">
+          <button data-v="off">Off</button>
+          <button data-v="on">On</button>
+        </div>
+      </div>
+      <div class="row" id="today-sound-row">
+        <div class="lbl">Today: sound when a session ends</div>
+        <div class="seg" id="segTodaySound">
+          <button data-v="off">Off</button>
+          <button data-v="on">On</button>
+        </div>
+      </div>
+          </section>
+          <!-- Features: Today and the terminal for everyone on this VaultOS (settings.json).
+               Saving reloads the page, which is when a change takes effect. -->
+          <section class="ss-pane ss-form" data-sec="features">
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-today">Today mode</label>
+          <p class="su-hint" id="ft-today-d">A daily page with habits, the day's tasks and a focus timer.</p></div>
+        <input type="checkbox" class="su-switch" id="ft-today" role="switch" aria-describedby="ft-today-d">
+      </div>
+      <div class="su-field">
+        <label for="ft-tz">Time zone</label>
+        <input id="ft-tz" class="su-input" type="text" list="ft-tzs" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="ft-tz-hint ft-tz-err">
+        <p class="su-hint" id="ft-tz-hint">Today's days start at midnight here.</p>
+        <p class="su-err" id="ft-tz-err" aria-live="polite"></p>
+      </div>
+      <datalist id="ft-tzs"></datalist>
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-term">Terminal</label>
+          <p class="su-hint" id="ft-term-d"></p></div>
+        <input type="checkbox" class="su-switch" id="ft-term" role="switch" aria-describedby="ft-term-d">
+      </div>
+      <p class="su-err" id="ft-err" aria-live="polite"></p>
+      <div class="ss-actions"><button type="button" id="ft-save" class="su-btn primary">Save and reload</button></div>
+          </section>
+          <!-- Agent: the same agent picker as setup step 4 (AgentForm.mountPicker in agent-form.js).
+               Install and Sign in open an ordinary VaultOS terminal. -->
+          <section class="ss-pane ss-form" data-sec="agent">
+      <p class="su-hint">Start agent on a card opens your default agent in a terminal in the card's folder, to brief you on where the task stands.</p>
+      <div class="ap" id="ag-picker"></div>
+      <p class="su-err" id="ag-err" aria-live="polite"></p>
+      <div class="su-custom" id="ag-custom">
+        <div class="su-custom-foot"><button type="button" class="su-btn" id="ag-custom-save">Save agent</button><p class="su-err" id="ag-custom-err" aria-live="polite"></p></div>
+      </div>
+          </section>
+          <!-- What Claude in a VaultOS terminal can use, read live from disk
+               (/api/skills) plus a fixed list of Claude Code's own commands. -->
+          <section class="ss-pane ss-skills" data-sec="skills">
+      <input type="search" id="skills-search" placeholder="Search skills…">
+      <div id="skills-list"></div>
+          </section>
+          <!-- Password: the one this VaultOS signs in with. The session secret stays, so
+               other signed-in browsers stay signed in. -->
+          <section class="ss-pane ss-form" data-sec="password">
+      <form id="pw-form" novalidate>
+        <div class="su-field">
+          <label for="pw-cur">Current password</label>
+          <input id="pw-cur" class="su-input" type="password" autocomplete="current-password" aria-describedby="pw-cur-err">
+          <p class="su-err" id="pw-cur-err" aria-live="polite"></p>
+        </div>
+        <div class="su-field">
+          <label for="pw-new">New password</label>
+          <input id="pw-new" class="su-input" type="password" autocomplete="new-password" aria-describedby="pw-new-hint pw-new-err">
+          <p class="su-hint" id="pw-new-hint">At least 8 characters. Browsers already signed in stay signed in.</p>
+          <p class="su-err" id="pw-new-err" aria-live="polite"></p>
+        </div>
+        <div class="su-field">
+          <label for="pw-new2">Confirm new password</label>
+          <input id="pw-new2" class="su-input" type="password" autocomplete="new-password" aria-describedby="pw-new2-err">
+          <p class="su-err" id="pw-new2-err" aria-live="polite"></p>
+        </div>
+        <p class="su-err" id="pw-err" aria-live="polite"></p>
+        <p class="ss-ok" id="pw-ok" role="status"></p>
+        <div class="ss-actions"><button type="submit" class="su-btn primary">Change password</button></div>
+      </form>
+          </section>
+        </div>
+      </div>
+      <div class="ss-foot">
+        <button type="button" id="logout-sheet" class="ghost">Sign out</button>
+      </div>
+    </div>
+
+    <!-- ---------- Today view (today.js builds it) ---------- -->
+    <div id="today-view"></div>
+
+    <!-- ---------- Board view ---------- -->
+    <div id="board-view" class="hidden">
+      <!-- Shown only while a batch chip has the board filtered. Never collapses cards —
+           they stay in their normal columns, there are just fewer of them. -->
+      <div id="batch-bar" class="batch-bar hidden"></div>
+      <main id="board" class="board"></main>
+      <button id="board-prev" class="board-nav board-nav-prev" type="button" aria-label="Scroll board left"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button id="board-next" class="board-nav board-nav-next" type="button" aria-label="Scroll board right"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></button>
+    </div>
+
+
+    <!-- ---------- Files view (Workbench) ---------- -->
+    <div id="files-view" class="hidden">
+      <div class="fx-layout" id="fx-layout">
+        <aside class="fx-side" id="fx-side">
+          <section class="fx-sec fx-recent-sec" id="fx-recent-sec">
+            <div class="fx-sec-head">
+              <button type="button" class="fx-sec-toggle" id="fx-recent-toggle" aria-expanded="true">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                Changed recently
+              </button>
+              <select id="fx-recent-hours" aria-label="How far back">
+                <option value="1">1h</option>
+                <option value="24" selected>24h</option>
+                <option value="168">7d</option>
+              </select>
+            </div>
+            <div id="fx-recent" class="fx-recent"></div>
+            <div class="fx-recent-resize" id="fx-recent-resize" title="Drag to resize · double-click to reset" aria-hidden="true"></div>
+          </section>
+          <section class="fx-sec fx-tree-sec">
+            <div class="fx-sec-head">
+              <span class="fx-sec-title" id="fx-tree-title">Vault</span>
+              <button type="button" class="fx-icon-btn" id="fx-refresh" title="Refresh the file list" aria-label="Refresh the file list"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+              <button type="button" class="fx-icon-btn" id="fx-collapse" title="Collapse all folders" aria-label="Collapse all folders"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg></button>
+            </div>
+            <div id="fx-tree" class="fx-tree" role="tree"></div>
+          </section>
+        </aside>
+        <div class="fx-scrim" id="fx-scrim"></div>
+        <section class="fx-main">
+          <div class="fx-tabs-row">
+            <button type="button" class="fx-icon-btn fx-side-toggle" id="fx-side-toggle" title="Show the file tree" aria-label="Toggle file tree"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+            <div id="fx-tabs" class="fx-tabs" role="tablist"></div>
+          </div>
+          <div id="fx-bar" class="fx-bar hidden"></div>
+          <div id="fx-view" class="fx-view"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ---------- Knowledge Base view ---------- -->
+    <div id="kb-view" class="hidden">
+      <div class="kb-layout">
+        <button id="kb-sidebar-toggle" class="kb-sidebar-toggle" type="button" title="Browse collections" aria-label="Toggle collections panel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+        <div id="kb-scrim" class="kb-scrim"></div>
+        <section id="kb-list" class="kb-list"></section>
+        <section id="kb-reader" class="kb-reader">
+          <div class="kb-welcome">
+            <h2>Knowledge Base</h2>
+            <p>Finished work, written up to be picked back up fast. Choose a collection, then an article.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Phone-only bottom tab bar, inside #app so it stays hidden behind the
+         login screen (hidden above 700px — see "Mobile nav" in
+         styles.css). Each button just clicks its header twin, so there's one
+         code path per mode; app.js mirrors the active state back onto these. -->
+    <nav id="mobile-nav" class="mobile-nav" aria-label="Sections">
+      <button type="button" data-for="mode-today" class="active"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v8M4.93 10.93l1.41 1.41M2 18h2M20 18h2M19.07 10.93l-1.41 1.41M22 22H2M8 6l4-4 4 4M16 18a4 4 0 0 0-8 0"/></svg><span>Today</span></button>
+      <button type="button" data-for="mode-board"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="11" rx="1.5"/></svg><span>Board</span></button>
+      <button type="button" data-for="mode-files"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Files</span></button>
+      <button type="button" data-for="mode-kb"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>KB</span></button>
+      <button type="button" data-for="termbtn" id="mnav-term"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>Terminal</span></button>
+    </nav>
+  </div>
+
+  <!-- Task drawer (board view) -->
+  <aside id="drawer" class="drawer hidden">
+    <div class="drawer-head">
+      <div>
+        <h2 id="d-title"></h2>
+        <div id="d-path" class="path"></div>
+      </div>
+      <div class="viewseg" role="group" aria-label="Task view">
+        <button data-v="side" title="Side peek" aria-label="Side peek"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="14" y1="3" x2="14" y2="21"/></svg></button>
+        <button data-v="center" title="Centre peek" aria-label="Centre peek"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></button>
+        <button data-v="full" title="Full page" aria-label="Full page"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+      </div>
+      <!-- Workbench: jump from a task to its folder. Icon-only; the tooltip says what each will do. -->
+      <button id="d-files" class="ghost d-act" type="button" aria-label="Show in Files" data-tip="Show in Files"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button>
+      <button id="d-agent" class="ghost d-act" type="button" aria-label="Start agent" data-tip="Start agent"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg><span class="agent-dot hidden"></span></button>
+      <button id="d-refresh" class="ghost" title="Re-read task.md from disk" aria-label="Refresh task"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <button id="d-close" class="ghost" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4 4 20"/><path d="m4 4 16 16"/></svg></button>
+    </div>
+    <!-- Back to the task this one's `batch:` points at. Hidden for a standalone task and
+         for a batch with no parent task.md. -->
+    <div id="d-parent" class="d-parent hidden"></div>
+    <!-- One row: which column of the board this task is sitting in (said in words
+         instead of left implied by whichever card you clicked), then the frontmatter
+         that used to sit in its own #d-meta strip below. The status chip doubles as
+         the changer — a real <select> laid transparently over the pill, so there's
+         one control rather than a label and a dropdown saying the same thing. -->
+    <div id="d-facts" class="d-facts"></div>
+    <div id="d-kb-link"></div>
+    <div id="d-docs"></div>
+    <!-- Batch fan-out: every task.md declaring this one's id as its `batch:`. Empty and
+         hidden for a task with no children, which is all but a handful of them. -->
+    <div id="d-subtasks" class="subtasks hidden"></div>
+    <div id="d-body" class="markdown"></div>
+  </aside>
+  <!-- Diagram viewer (pan/zoom lightbox, opened from a thumbnail in an article or task) -->
+  <div id="dgview" class="dgview hidden" role="dialog" aria-modal="true" aria-labelledby="dgv-title">
+    <div class="dgv-panel">
+      <div class="dgv-head">
+        <div class="dgv-titles">
+          <h2 id="dgv-title"></h2>
+          <div id="dgv-path" class="path"></div>
+        </div>
+        <div class="dgv-controls" role="group" aria-label="Zoom">
+          <button id="dgv-out" class="ghost" title="Zoom out (−)" aria-label="Zoom out"></button>
+          <span id="dgv-zoom" class="dgv-zoom">100%</span>
+          <button id="dgv-in" class="ghost" title="Zoom in (+)" aria-label="Zoom in"></button>
+          <button id="dgv-fit" class="ghost" title="Fit to window (0)" aria-label="Fit to window"></button>
+        </div>
+        <button id="dgv-close" class="ghost" title="Close (Esc)" aria-label="Close"></button>
+      </div>
+      <div id="dgv-stage" class="dgv-stage"></div>
+      <div class="dgv-foot">
+        <p id="dgv-desc" class="dgv-desc hidden"></p>
+        <span class="dgv-hint">Drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Doc viewer (guides / other .md files that sit beside a task.md) -->
+  <div id="docview" class="dgview hidden" role="dialog" aria-modal="true" aria-labelledby="docv-title">
+    <div class="dgv-panel docv-panel">
+      <div class="dgv-head">
+        <div class="dgv-titles">
+          <h2 id="docv-title"></h2>
+          <div id="docv-path" class="path"></div>
+        </div>
+        <button id="docv-refresh" class="ghost" title="Re-read this file from disk" aria-label="Refresh"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        <button id="docv-close" class="ghost" title="Close (Esc)" aria-label="Close"></button>
+      </div>
+      <div id="docv-body" class="markdown docv-body"></div>
+    </div>
+  </div>
+
+
+  <!-- Terminal dock (Workbench). Lives outside the views so the shells survive
+       every mode switch; body.dock-open shrinks the views to make room. -->
+  <section id="term-dock" class="term-dock hidden" aria-label="Terminals">
+    <div class="term-resize" id="term-resize" title="Drag to resize" aria-hidden="true"></div>
+    <div id="term-slot-dock" class="term-slot">
+      <!-- Filled by createTermWorkspace() in termui.js. -->
+      <div id="term-area"></div>
+    </div>
+  </section>
+
+
+
+  <div id="scrim" class="scrim hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/vendor/xterm.js"></script>
+  <script src="/vendor/addon-fit.js"></script>
+  <script src="/vendor/addon-web-links.js"></script>
+  <script src="/vendor/addon-webgl.js"></script>
+  <script src="/vendor/addon-unicode11.js"></script>
+  <script src="term.js"></script>
+  <script src="agent-marks.js"></script>
+  <script src="agent-form.js"></script>
+  <script src="termtree.js"></script>
+  <script src="termside.js"></script>
+  <script src="termpick.js"></script>
+  <script src="termkeys.js"></script>
+  <script src="termtoast.js"></script>
+  <script src="termui.js"></script>
+  <script src="app.js"></script>
+  <script src="today.js"></script>
+  <script src="sheet-core.js"></script>
+  <script src="sheet-grid.js"></script>
+  <script src="sheet-files.js"></script>
+  <script src="workbench.js"></script>
+</body>
+</html>
