@@ -2141,6 +2141,7 @@ body.term-popout .term-host { position: relative; }
 /* Minimise + close sit last, in the top-right corner, set apart from the layout
    tools. Close ends the shells, so its hover warns in the danger colour. */
 #term-min { margin-left: 4px; }
+#term-dockback { margin-left: 4px; }
 #term-min:hover { color: var(--text); border-color: var(--muted-2); background: var(--panel-2); }
 #term-close:hover { color: var(--danger-fg); border-color: color-mix(in srgb, var(--blocked) 55%, transparent); background: color-mix(in srgb, var(--blocked) 12%, transparent); }
 /* Claude's state in a connected terminal (server.js "Agent state"). Each one

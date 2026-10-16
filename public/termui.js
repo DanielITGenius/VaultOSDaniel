@@ -151,6 +151,7 @@ function createTermWorkspace(root, opts = {}) {
         <button class="ghost tw-act" data-act="split-right" type="button" title="Split right" aria-label="Split right">${TW_ICONS.splitRight}</button>
         <button class="ghost tw-act" data-act="split-down" type="button" title="Split down" aria-label="Split down">${TW_ICONS.splitDown}</button>
         <button class="ghost tw-act" data-act="zoom" type="button" aria-pressed="false" title="Zoom the focused pane" aria-label="Zoom the focused pane">${TW_ICONS.zoom}</button>
+        <button class="ghost tw-act tw-act-more" data-act="more" type="button" title="Pane menu — rename, combine spaces, close" aria-label="Pane menu" aria-haspopup="menu">⋯</button>
         <div class="seg tw-zoom" role="group" aria-label="Terminal text size">
           <button data-z="-1" type="button" title="Smaller text (Ctrl -)" aria-label="Smaller terminal text">${TW_ICONS.zoomOut}</button>
           <button data-z="0" type="button" class="tw-zoom-val" title="Reset text size (Ctrl 0)" aria-label="Reset terminal text size">${termFontSize()}</button>
@@ -357,6 +358,8 @@ function createTermWorkspace(root, opts = {}) {
       if (k.startsWith('t:') && TermTree.leaves(W.store.spaces[k].root).includes(s.id)
         && TermTree.spaceKey(s, new Set([k.slice(2)])) === k) return k;
     }
+    // A pane combined into another space stays there across a reload.
+    for (const k of Object.keys(W.store.spaces)) if (TermTree.leaves(W.store.spaces[k].root).includes(s.id)) return k;
     return key;
   }
 
@@ -549,6 +552,7 @@ function createTermWorkspace(root, opts = {}) {
     // key to now (a plain shell that joined a task space stays there).
     const into = split ? session(target) : null;
     s.key = into ? into.key : keyFor(s);
+    s.joined = s.key !== TermTree.spaceKey(s, knownTasks());   // combined by hand: the server's task link doesn't pull it back out
     W.expected.delete(s.id);
     s.pane = buildPane(s);
     panesEl.appendChild(s.pane);
@@ -673,6 +677,23 @@ function createTermWorkspace(root, opts = {}) {
     if (showSpace(key)) return;
     const sp = spaces().find((x) => x.key === key);
     if (sp && sp.goId) goTo(sp.goId);
+  }
+
+  // Fold every pane of one space into another, as splits beside what is already there.
+  function combineSpace(fromKey, toKey) {
+    const ids = heldIn(fromKey);
+    if (fromKey === toKey || !ids.length || !W.store.spaces[toKey]) return;
+    const box = paneBox();
+    for (const id of ids) {
+      const s = session(id);
+      W.store = TermTree.rekey(W.store, id, s.key, toKey, { w: box.w, h: box.h }).store;
+      s.key = toKey;
+      s.joined = true;
+    }
+    W.store.spaces[toKey].zoom = null;   // show them all, not just the zoomed pane
+    picked();
+    focusSession(ids[0]);
+    heldChanged();
   }
 
   function split(dir) {
@@ -838,6 +859,8 @@ function createTermWorkspace(root, opts = {}) {
       + item('split-right', TW_ICONS.splitRight, 'Split right')
       + item('split-down', TW_ICONS.splitDown, 'Split down')
       + item('zoom', TW_ICONS.zoom, zoomed ? 'Unzoom' : 'Zoom')
+      + spaces().filter((sp) => sp.key !== s.key && heldIn(sp.key).length).slice(0, 8)
+        .map((sp) => `<button type="button" role="menuitem" data-m="combine" data-to="${twEsc(sp.key)}">${TW_ICONS.splitRight}<span>Combine into ${twEsc(sp.name)}</span></button>`).join('')
       + item('close', TW_ICONS.close, 'Close');
     W.menuFor = id;
     menuEl.hidden = false;
@@ -903,6 +926,7 @@ function createTermWorkspace(root, opts = {}) {
     if (m === 'rename') renamePane(id);
     else if (m === 'split-right' || m === 'split-down') create({ split: m.slice(6), target: id });
     else if (m === 'zoom') { focusSession(id, { keepKeyboard: true }); toggleZoom(); }
+    else if (m === 'combine') combineSpace(session(id).key, b.dataset.to);
     else if (m === 'close') closePane(id);
   });
   // Escape stays on the menu: app.js closes the drawer on any document Escape.
@@ -915,7 +939,7 @@ function createTermWorkspace(root, opts = {}) {
   });
   document.addEventListener('pointerdown', (e) => {
     if (!W.menuFor || menuEl.contains(e.target)) return;
-    if (e.target.closest && e.target.closest('.tw-pane-more')) W.menuShut = { id: W.menuFor, t: Date.now() };
+    if (e.target.closest && e.target.closest('.tw-pane-more, .tw-act-more')) W.menuShut = { id: W.menuFor, t: Date.now() };
     closeMenu(false);
   }, true);
   window.addEventListener('blur', () => closeMenu(false));
@@ -925,6 +949,14 @@ function createTermWorkspace(root, opts = {}) {
   q('[data-act="split-right"]').addEventListener('click', () => split('right'));
   q('[data-act="split-down"]').addEventListener('click', () => split('down'));
   zoomBtn.addEventListener('click', () => toggleZoom());
+  // The strip's ⋯ is hidden on a lone or zoomed pane; this one is always there.
+  q('[data-act="more"]').addEventListener('click', (e) => {
+    const f = focused();
+    if (!f) return;
+    if (W.menuShut && W.menuShut.id === f.id && Date.now() - W.menuShut.t < 300) return;   // the click that just closed it
+    const r = e.currentTarget.getBoundingClientRect();
+    openMenu(f.id, { x: r.right, y: r.bottom + 2, alignRight: true });
+  });
   const zoomEl = q('.tw-zoom');
   zoomEl.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-z]');
@@ -1115,7 +1147,7 @@ function createTermWorkspace(root, opts = {}) {
     const want = new Map();   // id → new key
     for (const r of rawRows()) {
       const s = r.where === 'here' && listed.has(r.id) ? session(r.id) : null;
-      if (s && s.key !== r.key) want.set(s.id, r.key);
+      if (s && !s.joined && s.key !== r.key) want.set(s.id, r.key);
     }
     if (!want.size) return changed;
     const names = spaceNames();
@@ -1398,6 +1430,7 @@ function createTermWorkspace(root, opts = {}) {
     spaceKeys,
     showSpace,
     split,
+    combineSpace,
     toggleZoom,
     focusDir,
     // The server list, merged
