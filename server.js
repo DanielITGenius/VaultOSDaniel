@@ -1571,17 +1571,20 @@ app.get('/api/task', async (req, res) => {
 
 // ---------- Knowledge Base API ----------
 // List: collections + article metas (bodies stripped). Optional ?q= full-text filter.
-// Articles matching q, best first. Falls back to the old substring filter if the
-// index fails, so a search bug never empties the KB.
+// Articles matching q, best first. The box searches as you type, so the last word
+// matches as a prefix; when ranking finds nothing (a fragment from mid-word like
+// "sdholder", or only stopwords) or the index fails, the old substring filter answers.
 async function rankArticles(articles, q, wsDir) {
+  const substring = () => articles.filter((a) =>
+    [a.title, a.stack.join(' '), a.tickets, a.collectionName, a.body].join('\n').toLowerCase().includes(q));
   try {
-    const hits = await searchIndex.search(q, { kind: 'article', under: relOf(wsDir) + '/', limit: articles.length || 1 });
+    const hits = await searchIndex.search(q, { kind: 'article', under: relOf(wsDir) + '/', limit: articles.length || 1, prefix: true });
     const byPath = new Map(articles.map((a) => [a.path, a]));
-    return hits.map((h) => byPath.get(h.path)).filter(Boolean);
+    const ranked = hits.map((h) => byPath.get(h.path)).filter(Boolean);
+    return ranked.length ? ranked : substring();
   } catch (err) {
     console.error('kb search failed, using substring match:', err);
-    return articles.filter((a) =>
-      [a.title, a.stack.join(' '), a.tickets, a.collectionName, a.body].join('\n').toLowerCase().includes(q));
+    return substring();
   }
 }
 

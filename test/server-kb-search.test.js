@@ -62,3 +62,12 @@ test('kb search finds an article with no title or TL;DR, titled by its folder', 
   const { articles } = await res.json();
   assert.deepEqual(articles.map((a) => [a.path, a.title]), [['Work/1. p/03-contact-form/article.md', '03-contact-form']]);
 });
+
+test('kb search still finds partial words while typing', async (t) => {
+  const { srv, cookie } = await kbServer(t, {
+    'Work/1. p/a/article.md': art('AdminSDHolder and SDProp', 'Postgres too.'),
+    'Work/1. p/b/article.md': art('Printers', 'toner'),
+  });
+  assert.deepEqual(await kb(srv, cookie, 'postg'), ['Work/1. p/a/article.md']);
+  assert.deepEqual(await kb(srv, cookie, 'sdholder'), ['Work/1. p/a/article.md']);
+});

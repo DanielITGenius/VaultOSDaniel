@@ -161,3 +161,11 @@ test('the cache picks up edits and deletions', async (t) => {
   fs.rmSync(path.join(dir, 'W', 'b.md'));
   assert.deepEqual(await idx.search('banana'), []);
 });
+
+test('prefix:true lets the last query word match as a prefix', async (t) => {
+  const dir = vault(t, { 'W/a/article.md': fm({ title: 'Postgres upgrade' }, 'kubernetes notes'), 'W/b.md': 'unrelated' });
+  const idx = createIndex(dir);
+  assert.deepEqual(await idx.search('postg'), []);
+  assert.deepEqual(paths(await idx.search('postg', { prefix: true })), ['W/a/article.md']);
+  assert.deepEqual(paths(await idx.search('upgrade kube', { prefix: true, minCoverage: 1 })), ['W/a/article.md']);
+});

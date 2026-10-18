@@ -126,7 +126,7 @@ test('installClaudeHook registers the recall hook once', async () => {
   const s = JSON.parse(readSettings(h));
   const groups = s.hooks.UserPromptSubmit;
   assert.equal(groups.length, 2);
-  assert.deepEqual(groups[1], { hooks: [{ type: 'command', command: `node "${RECALL}"`, timeout: 5 }] });
+  assert.deepEqual(groups[1], { hooks: [{ type: 'command', command: A.recallCmd(RECALL), timeout: 5 }] });
   const before = readSettings(h);
   assert.equal(await A.installClaudeHook(h, HOOK_SRC, RECALL), false);
   assert.equal(readSettings(h), before);
@@ -141,4 +141,15 @@ test('installClaudeHook sets cleanupPeriodDays only when absent', async () => {
   fs.writeFileSync(path.join(h2, '.claude', 'settings.json'), JSON.stringify({ cleanupPeriodDays: 90 }));
   await A.installClaudeHook(h2, HOOK_SRC);
   assert.equal(JSON.parse(readSettings(h2)).cleanupPeriodDays, 90);
+});
+
+test('the recall hook command is a no-op where node or the script is missing', () => {
+  const { spawnSync } = require('node:child_process');
+  const run = (cmd, env) => spawnSync('/bin/sh', ['-c', cmd], { input: '{}', encoding: 'utf8', env });
+  const missing = run(A.recallCmd('/nonexistent/vault-recall.js'), { PATH: process.env.PATH });
+  assert.equal(missing.status, 0);
+  assert.equal(missing.stderr, '');
+  const noNode = run(A.recallCmd(RECALL), { PATH: '/nonexistent' });
+  assert.equal(noNode.status, 0);
+  assert.equal(noNode.stderr, '');
 });
