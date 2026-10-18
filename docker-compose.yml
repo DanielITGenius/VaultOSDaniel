@@ -19,20 +19,23 @@ services:
   #     - PGID=1000
   #     - TITLE=vault
 
-  syncthing:
-    image: syncthing/syncthing:latest
-    container_name: vault-syncthing
-    restart: unless-stopped
-    environment:
-      - PUID=1000
-      - PGID=1000
-    volumes:
-      - ./vault:/vault
-      - syncthing_data:/var/syncthing
-    ports:
-      - "22000:22000/tcp"
-      - "22000:22000/udp"
-      - "21027:21027/udp"
+  # Retired 2026-10-18: the vault now lives on the NAS share (CT mp0), so
+  # Syncthing is no longer needed. syncthing_data is left declared below
+  # (external: true) so its data is not orphaned.
+  # syncthing:
+  #   image: syncthing/syncthing:latest
+  #   container_name: vault-syncthing
+  #   restart: unless-stopped
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #   volumes:
+  #     - ./vault:/vault
+  #     - syncthing_data:/var/syncthing
+  #   ports:
+  #     - "22000:22000/tcp"
+  #     - "22000:22000/udp"
+  #     - "21027:21027/udp"
 
   # Retired 2026-07-20: superseded by the code-server terminal. Was also an
   # unauthenticated root shell published on 0.0.0.0:7681.
@@ -120,26 +123,27 @@ services:
       start_period: 10s
       retries: 3
 
+  # Retired 2026-10-18: no longer needed. ./career and vault/Career-Ops are left in place.
   # Career Ops hub (added 2026-07-24): serves /opt/vault/vault/Career-Ops as a
   # readable site + the Proxmox homelab build companion. Zero-dependency node
   # server, so no image build — stock node:22-alpine running server.mjs.
   # Same user rule as the board: must be 1000:1000 or the homelab progress
   # file it writes into the vault becomes root:root.
-  career:
-    image: node:22-alpine
-    container_name: vault-career
-    restart: unless-stopped
-    user: "1000:1000"
-    working_dir: /app
-    command: ["node", "server.mjs"]
-    environment:
-      - CAREER_DIR=/career
-      - PORT=8080
-    volumes:
-      - ./career:/app:ro
-      - ./vault/Career-Ops:/career
-    ports:
-      - "7686:8080"
+  # career:
+  #   image: node:22-alpine
+  #   container_name: vault-career
+  #   restart: unless-stopped
+  #   user: "1000:1000"
+  #   working_dir: /app
+  #   command: ["node", "server.mjs"]
+  #   environment:
+  #     - CAREER_DIR=/career
+  #     - PORT=8080
+  #   volumes:
+  #     - ./career:/app:ro
+  #     - ./vault/Career-Ops:/career
+  #   ports:
+  #     - "7686:8080"
 
   code-server:
     image: codercom/code-server:latest
