@@ -1275,7 +1275,10 @@ function renderKBWelcome() {
   const arts = STATE.kb.articles;
   const collections = STATE.kb.collections;
   const reads = kbReadMap();
-  const picks = recommendedArticles(arts, reads).slice(0, 3);
+  // While searching, the server's order is the ranking: show it as Best matches
+  // instead of re-sorting by date, and drop the reading picks.
+  const searching = !!STATE.kb.query;
+  const picks = searching ? [] : recommendedArticles(arts, reads).slice(0, 3);
   const withDiagrams = arts.flatMap((a) => (a.diagrams || []).map((d) => ({ ...d, article: a })));
   const diagramPick = withDiagrams.length ? withDiagrams[Math.floor(Math.random() * withDiagrams.length)] : null;
 
@@ -1293,7 +1296,7 @@ function renderKBWelcome() {
   const hue = (a) => hueOf.get(a.collection) || 'var(--brand)';
   const unread = arts.filter((a) => !reads[a.path]).length;
   const pickPaths = new Set(picks.map((a) => a.path));
-  const latest = [...arts]
+  const latest = searching ? arts.slice(0, 8) : [...arts]
     .filter((a) => !pickPaths.has(a.path))
     .sort((x, y) => (y.updated || '').localeCompare(x.updated || '') || (y.mtime || 0) - (x.mtime || 0))
     .slice(0, 5);
@@ -1353,7 +1356,7 @@ function renderKBWelcome() {
       </div>
       <div class="kb-cols">
         ${picks.length ? col('Pick this up again', picks.length, picks.map(recCard).join(''), 'kb-col-picks') : ''}
-        ${latest.length ? col('Latest', latest.length, latest.map((a) => `
+        ${latest.length ? col(searching ? 'Best matches' : 'Latest', latest.length, latest.map((a) => `
           <button type="button" class="card kb-card kb-card-row" data-path="${esc(a.path)}">
             <h3>${esc(a.title)}</h3>
             ${metaRow(a, esc(when(a.updated)))}

@@ -683,6 +683,12 @@ function todayISO() {
 const { atomicWrite } = require('./lib/atomic-write');
 const { createToday } = require('./lib/today-service');
 const { createQuotes } = require('./lib/today-quote');
+const { createIndex } = require('./lib/search');
+
+// One warm search index for the KB box and the agents' `vault-search`. The vault
+// may sit on a network share where a full walk takes seconds, so searches answer
+// from memory and a background rescan runs at most once a minute.
+const searchIndex = createIndex(VAULT_DIR, { maxAgeMs: 60e3 });
 
 // Built on first use from the settings, and only while Today is on, so a vault
 // without Today never starts the timer service or fetches a quote.
@@ -1550,15 +1556,26 @@ app.get('/api/task', async (req, res) => {
 
 // ---------- Knowledge Base API ----------
 // List: collections + article metas (bodies stripped). Optional ?q= full-text filter.
+// Articles matching q, best first. Falls back to the old substring filter if the
+// index fails, so a search bug never empties the KB.
+async function rankArticles(articles, q, wsDir) {
+  try {
+    const hits = await searchIndex.search(q, { kind: 'article', under: relOf(wsDir) + '/', limit: articles.length || 1 });
+    const byPath = new Map(articles.map((a) => [a.path, a]));
+    return hits.map((h) => byPath.get(h.path)).filter(Boolean);
+  } catch (err) {
+    console.error('kb search failed, using substring match:', err);
+    return articles.filter((a) =>
+      [a.title, a.stack.join(' '), a.tickets, a.collectionName, a.body].join('\n').toLowerCase().includes(q));
+  }
+}
+
 app.get('/api/kb', async (req, res) => {
   try {
     const ws = resolveWorkspace(req.query.ws);
     const q = String(req.query.q || '').trim().toLowerCase();
     let articles = await scanKB(ws.dir);
-    if (q) {
-      articles = articles.filter((a) =>
-        [a.title, a.stack.join(' '), a.tickets, a.collectionName, a.body].join('\n').toLowerCase().includes(q));
-    }
+    if (q) articles = await rankArticles(articles, q, ws.dir);
     const seen = new Map();
     for (const a of articles) {
       if (!seen.has(a.collection)) seen.set(a.collection, { key: a.collection, name: a.collectionName, count: 0 });
