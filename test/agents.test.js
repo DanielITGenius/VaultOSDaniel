@@ -117,3 +117,28 @@ test('only a terminal Start agent opened counts as the agent\'s; a job-folder te
   const { agentTerm } = A.terminalTask({ explicit: '', found: 'Work/p/j/task.md' });
   assert.equal(A.processMatches(A.PROFILES.codex, 'node', { agentTerm }), false);
 });
+
+const RECALL = path.join(__dirname, '..', 'hooks', 'vault-recall.js');
+
+test('installClaudeHook registers the recall hook once', async () => {
+  const h = tmpHome();
+  assert.equal(await A.installClaudeHook(h, HOOK_SRC, RECALL), true);
+  const s = JSON.parse(readSettings(h));
+  const groups = s.hooks.UserPromptSubmit;
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups[1], { hooks: [{ type: 'command', command: `node "${RECALL}"`, timeout: 5 }] });
+  const before = readSettings(h);
+  assert.equal(await A.installClaudeHook(h, HOOK_SRC, RECALL), false);
+  assert.equal(readSettings(h), before);
+});
+
+test('installClaudeHook sets cleanupPeriodDays only when absent', async () => {
+  const h = tmpHome();
+  await A.installClaudeHook(h, HOOK_SRC);
+  assert.equal(JSON.parse(readSettings(h)).cleanupPeriodDays, 36500);
+  const h2 = tmpHome();
+  fs.mkdirSync(path.join(h2, '.claude'));
+  fs.writeFileSync(path.join(h2, '.claude', 'settings.json'), JSON.stringify({ cleanupPeriodDays: 90 }));
+  await A.installClaudeHook(h2, HOOK_SRC);
+  assert.equal(JSON.parse(readSettings(h2)).cleanupPeriodDays, 90);
+});

@@ -1429,7 +1429,7 @@ async function agentStatus() {
 // Whenever Claude Code is installed, whichever agent is the default, so a later switch needs no resave.
 async function ensureClaudeHook() {
   if (!(await isInstalled(PROFILES.claude))) return false;
-  return installClaudeHook(os.homedir(), path.join(ROOT, 'hooks', 'vaultos-state.js'));
+  return installClaudeHook(os.homedir(), path.join(ROOT, 'hooks', 'vaultos-state.js'), path.join(ROOT, 'hooks', 'vault-recall.js'));
 }
 // Every agent for the picker: the eight built-ins, then a saved custom agent, each with a live installed
 // check (run side by side), and which one is the default.
