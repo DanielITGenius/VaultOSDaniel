@@ -63,6 +63,15 @@ Dates are `YYYY-MM-DD`.
 
 Before you stop, if the task's `status:` is `in-progress` or `review`: make sure its Progress log has today's entry and `updated:` is today. Claude Code gets both rules from hooks in `.claude/` (the task.md is loaded into every prompt, and stopping is held back once while `updated:` is stale); every other agent follows them from here.
 
+## Search the vault before you answer
+
+Before answering a question or starting a job, search what is already known:
+
+    vault-search <words>                 # ranked: newer and curated first
+    vault-search <words> --kind article  # Knowledge Base articles only
+
+Open the top hits that bear on the request. Prefer an article's findings over older task notes, and newer over older when they disagree.
+
 ## Create, split, finish
 
 Each has a step-by-step guide that works with any coding agent:

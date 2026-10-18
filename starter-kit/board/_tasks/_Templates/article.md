@@ -4,6 +4,7 @@ title: ""
 area: ""                 # same as the task's area
 stack: []                # technologies involved, e.g. [Postgres, Nginx]; shown as chips
 tickets: ""              # ticket or reference numbers, if any
+search: []               # questions and terms someone would type to find this
 job: ""                  # path to the task.md this came from, from the vault root, e.g. Work/2. website/03-contact-form/task.md
 status: published        # published | draft
 created: ""              # YYYY-MM-DD

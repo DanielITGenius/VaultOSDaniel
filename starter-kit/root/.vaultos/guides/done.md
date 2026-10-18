@@ -34,6 +34,7 @@ The bar: someone who has never seen this job understands what it was, how it end
   - `area`: the same as the task.
   - `stack`: the technologies and products involved, as a list, e.g. `[Postgres, Nginx]`. They show as chips. Be specific.
   - `tickets`: ticket or reference numbers, if any.
+  - `search`: 3 to 6 entries someone would type to find this later: at least two natural questions ("why does OU delegation skip Domain Admins") plus exact error strings, commands or identifiers worth pasting. Search ranks these as highly as the title.
   - `job`: the path from the vault root to this job's `task.md`.
   - `status: published`. Use `draft` only if you are knowingly leaving it unfinished.
   - `created` and `updated`: today.
