@@ -10,7 +10,7 @@ const { writePassword } = require('../lib/password');
 const PASSWORD = 'correct horse';
 const art = (title, body) => `---\ntype: article\n${title ? `title: "${title}"\n` : ''}updated: 2026-10-01\n---\n\n${body}\n`;
 
-async function kbServer(t, files) {
+async function kbServer(t, files, env) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vaultos-kbsearch-'));
   const d = { vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home') };
   fs.mkdirSync(d.vault);
@@ -24,7 +24,7 @@ async function kbServer(t, files) {
     ...files,
   });
   writePassword(d.data, PASSWORD);
-  const srv = await startServer({ vault: d.vault, data: d.data, home: d.home });
+  const srv = await startServer({ vault: d.vault, data: d.data, home: d.home, env });
   t.after(async () => { await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
   return { srv, cookie: await login(srv.base, PASSWORD) };
 }
@@ -45,6 +45,15 @@ test('kb search ranks by relevance and matches non-adjacent words', async (t) =>
   assert.equal(got[0], 'Work/1. p/a/article.md');
   assert.ok(got.includes('Work/1. p/b/article.md'));
   assert.ok(!got.includes('Work/1. p/c/article.md'));
+});
+
+test('terminal search refuses a caller without a terminal token', async (t) => {
+  const { srv } = await kbServer(t, { 'Work/1. p/a/article.md': art('Alpha', 'x') }, { TERMINAL: undefined });
+  const res = await fetch(`${srv.base}/api/term/search`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: 'nope', token: 'nope', q: 'alpha' }),
+  });
+  assert.equal(res.status, 403);
 });
 
 test('kb search finds an article with no title or TL;DR, titled by its folder', async (t) => {

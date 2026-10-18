@@ -44,6 +44,9 @@ COPY server.js set-password.js ./
 COPY lib ./lib
 COPY public ./public
 COPY hooks ./hooks
+# vault-search: ranked search of the vault for any agent in a terminal.
+COPY bin ./bin
+RUN chmod +x bin/vault-search.js && ln -s /app/bin/vault-search.js /usr/local/bin/vault-search
 COPY starter-kit ./starter-kit
 COPY docker-entrypoint.sh /usr/local/bin/vaultos-entrypoint
 

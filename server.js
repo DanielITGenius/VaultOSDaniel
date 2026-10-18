@@ -895,7 +895,7 @@ function logRejectedHost(host) {
 }
 app.use((req, res, next) => {
   // /api/term/agent is already limited to loopback callers holding a per-terminal token.
-  if (req.path === '/health' || (req.method === 'POST' && req.path === '/api/term/agent') || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
+  if (req.path === '/health' || (req.method === 'POST' && (req.path === '/api/term/agent' || req.path === '/api/term/search')) || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
   const host = safeHost(req.headers.host);
   logRejectedHost(host);
   res.status(421).type('text/plain').send(
@@ -1176,6 +1176,21 @@ app.post('/api/setup/finish', async (req, res) => {
 // (see termAgentHook). Ahead of the gate on purpose: the hook has no cookie,
 // its auth is the per-terminal token plus a loopback peer.
 if (TERMINAL_ENV) app.post('/api/term/agent', termAgentHook);
+// `vault-search` and the recall hook, run by agents in a VaultOS terminal, use the
+// server's warm index instead of walking the vault themselves. Same token as above.
+if (TERMINAL_ENV) app.post('/api/term/search', async (req, res) => {
+  if (!termCaller(req)) return res.status(403).json({ error: 'Forbidden' });
+  const b = req.body;
+  try {
+    const results = await searchIndex.search(String(b.q || ''), {
+      kind: b.kind || undefined, board: typeof b.board === 'string' ? b.board : undefined,
+      limit: Math.min(50, Math.max(1, Number(b.limit) || 10)), minCoverage: Number(b.minCoverage) || 0,
+    });
+    res.json({ results });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
 
 // Gate everything below.
 app.use('/api', (req, res, next) => {
@@ -2655,12 +2670,20 @@ function isLoopback(req) {
   const a = req.socket.remoteAddress || '';
   return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
 }
-function termAgentHook(req, res) {
+// The terminal a loopback request comes from, proven by its per-terminal token
+// (VAULTOS_TERM_ID / VAULTOS_TERM_TOKEN in the shell's env), or null.
+function termCaller(req) {
   const b = req.body || {};
   const t = typeof b.id === 'string' && TERMS.get(b.id);
   const ok = t && isLoopback(req) && typeof b.token === 'string' && b.token.length === t.token.length
     && crypto.timingSafeEqual(Buffer.from(b.token), Buffer.from(t.token));
-  if (!ok) return res.status(403).json({ error: 'Forbidden' });
+  return ok ? t : null;
+}
+
+function termAgentHook(req, res) {
+  const b = req.body || {};
+  const t = termCaller(req);
+  if (!t) return res.status(403).json({ error: 'Forbidden' });
   const state = agentStateFor(b);
   if (state !== undefined) setAgent(t, state, typeof b.session_id === 'string' ? b.session_id : '');
   res.json({ ok: true });
