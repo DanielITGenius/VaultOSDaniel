@@ -41,6 +41,39 @@ test('Cursor CLI prose wrapped short of the edge is rejoined at any width', () =
   for (const cols of [110, 120, 150, 200, 260]) assert.equal(tidySelection(CURSOR, cols), CURSOR_TIDY, `cols ${cols}`);
 });
 
+// Cursor wrapping near (not at) the edge of a wide terminal, with a command
+// block in the same selection: the prose is rejoined, the commands are not.
+const MIXED = [
+  '  3. Testing restores matters as much as taking backups, because unverified copies can be incomplete, encrypted, or outdated, and discovering that',
+  '     only during an incident wastes time when every hour of downtime already costs money and trust.',
+  '',
+  '  If you had to choose one control to improve first after reading this, would you tighten firewall rules, schedule verified backups, or both, and',
+  '  why for your environment?',
+  '',
+  '  Get-ChildItem C:\\Windows\\Temp | Where-Object { $_.Length -gt 1MB } | Sort-Object Length -Descending',
+  '  Get-Service | Where-Object { $_.Status -eq \'Running\' } | Select-Object Name, DisplayName',
+].join('\n');
+
+test('Cursor prose near the edge rejoins even with commands in the selection', () => {
+  const got = tidySelection(MIXED, 160).split('\n');
+  assert.equal(got.length, 6);
+  assert.match(got[0], /discovering that only during an incident/);
+  assert.match(got[2], /or both, and why for your environment\?$/);
+  assert.match(got[4], /^Get-ChildItem .* -Descending$/);
+  assert.match(got[5], /^Get-Service /);
+});
+
+test('a list item that ends near the margin is not glued to the next item', () => {
+  const sel = [
+    '  1. Backups matter because hardware fails, people delete files by mistake, and ransomware can lock systems overnight, so a',
+    '     recent restore point is often the only practical way to recover without paying or rebuilding from scratch under pressure.',
+    '  2. Regular backups also protect business continuity when a laptop is lost, a cloud account is compromised, or a bad update',
+  ].join('\n');
+  const got = tidySelection(sel, 200).split('\n');
+  assert.equal(got.length, 2);
+  assert.match(got[1], /^2\. Regular/);
+});
+
 test('Claude Code wrap at the terminal edge still rejoins', () => {
   const cols = 40;
   const sel = '  Run this to restart the board and then\n  check the logs for errors';

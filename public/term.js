@@ -152,33 +152,37 @@ function copyFlash(pane, msg, bad) {
 // Some agents (Cursor CLI) wrap their own prose at a fixed width well short of
 // the terminal edge, so nothing reaches `cols`. Then the wrap width is read off
 // the selection: its longest line, but only when another line ends within 10
-// cells of it (a shared right margin, not one long command among short ones),
-// and only for prose: a selection with flags, pipes or `$x`/`a=b` is likely a
-// block of real commands of similar length, so its newlines are kept.
+// cells of it (a shared right margin, not one long command among short ones).
+// Only prose counts: a line with flags, pipes or `$x`/`a=b` is likely a real
+// command, so it neither sets the margin nor gets glued by it. The margin also
+// applies when Cursor wraps near (not at) the edge of a wide terminal, which
+// leaves more slack than the 4 cells allowed below.
 function tidySelection(text, cols) {
   const raw = text.replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, ''));
   if (raw.length < 2) return raw.join('').trim();
   const indents = raw.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
   const cut = indents.length ? Math.min(...indents) : 0;
-  const longest = Math.max(...raw.map((l) => l.length));
-  const code = raw.some((l) => /(^|\s)--?[A-Za-z]|[|$=;{}<>`]/.test(l));
-  const margin = !code && longest >= 60 && longest < cols - 4 && raw.filter((l) => l.length >= longest - 10).length >= 2;
-  if (margin) cols = longest + 1;
+  const isCode = (l) => /(^|\s)--?[A-Za-z]|[|$=;{}<>`]/.test(l);
+  const prose = raw.filter((l) => !isCode(l));
+  const longest = Math.max(0, ...prose.map((l) => l.length));
+  const margin = longest >= 60 && prose.filter((l) => l.length >= longest - 10).length >= 2;
   let out = raw[0].slice(cut);
   for (let i = 1; i < raw.length; i++) {
     const prev = raw[i - 1], line = raw[i];
+    const cols_ = margin && !isCode(prev) && !isCode(line) ? Math.min(cols, longest + 1) : cols;
     const width = prev.length;                          // cells used on screen, indent included
     const firstWord = line.trimStart().split(/\s/)[0].length;
     const wrapped = line.trim() && prev.trim() && !/\\$/.test(prev)
-      && line.match(/^ */)[0].length <= cut + 4;
+      && line.match(/^ */)[0].length <= cut + 4
+      && !/^\s*(\d+[.)]|[-*•])\s/.test(line);              // a list item starts a real line
     // A line that fills to the edge is either a long token (path, URL) broken
     // mid-way, or an ordinary word wrap that happened to land exactly there.
     // Only glue without a space when the last token looks like a path/URL or is
     // too long to be a word, e.g. "you|can" and "Descending |Select-Object" keep theirs.
     const lastTok = prev.trim().split(/\s/).pop();
     const midToken = lastTok.length >= 20 || /[\\/]/.test(lastTok);
-    if (wrapped && width >= cols - 1 && midToken) out += line.trimStart();               // broken mid-token
-    else if (wrapped && width + 1 + firstWord > cols - 4) out += ' ' + line.trimStart(); // next word would not have fit
+    if (wrapped && width >= cols_ - 1 && midToken) out += line.trimStart();               // broken mid-token
+    else if (wrapped && width + 1 + firstWord > cols_ - 4) out += ' ' + line.trimStart(); // next word would not have fit
     else out += '\n' + line.slice(cut);
   }
   return out.replace(/^\n+|\n+$/g, '');
