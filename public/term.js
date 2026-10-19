@@ -148,11 +148,22 @@ function copyFlash(pane, msg, bad) {
 // rejoin a line with the next when the next one's first word couldn't have fit
 // (i.e. the break was a wrap, not a real newline). A line ending in `\` is a
 // real shell continuation and is left alone. Ctrl+Shift+C copies raw.
+//
+// Some agents (Cursor CLI) wrap their own prose at a fixed width well short of
+// the terminal edge, so nothing reaches `cols`. Then the wrap width is read off
+// the selection: its longest line, but only when another line ends within 10
+// cells of it (a shared right margin, not one long command among short ones),
+// and only for prose: a selection with flags, pipes or `$x`/`a=b` is likely a
+// block of real commands of similar length, so its newlines are kept.
 function tidySelection(text, cols) {
   const raw = text.replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, ''));
   if (raw.length < 2) return raw.join('').trim();
   const indents = raw.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
   const cut = indents.length ? Math.min(...indents) : 0;
+  const longest = Math.max(...raw.map((l) => l.length));
+  const code = raw.some((l) => /(^|\s)--?[A-Za-z]|[|$=;{}<>`]/.test(l));
+  const margin = !code && longest >= 60 && longest < cols - 4 && raw.filter((l) => l.length >= longest - 10).length >= 2;
+  if (margin) cols = longest + 1;
   let out = raw[0].slice(cut);
   for (let i = 1; i < raw.length; i++) {
     const prev = raw[i - 1], line = raw[i];
