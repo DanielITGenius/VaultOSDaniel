@@ -161,12 +161,17 @@ function tidySelection(text, cols) {
   const raw = text.replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, ''));
   if (raw.length < 2) return raw.join('').trim();
   const indents = raw.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
-  const cut = indents.length ? Math.min(...indents) : 0;
+  let cut = indents.length ? Math.min(...indents) : 0;
+  // A drag that starts at the first word leaves that line without the agent's
+  // 1-2 cell gutter; take the gutter from the other lines. A deeper shared
+  // indent (a code body under `def`) is real indentation and is kept.
+  const rest = indents.slice(1);
+  if (indents[0] === 0 && rest.length && Math.min(...rest) <= 2) cut = Math.min(...rest);
   const isCode = (l) => /(^|\s)--?[A-Za-z]|[|$=;{}<>`]/.test(l);
   const prose = raw.filter((l) => !isCode(l));
   const longest = Math.max(0, ...prose.map((l) => l.length));
   const margin = longest >= 60 && prose.filter((l) => l.length >= longest - 10).length >= 2;
-  let out = raw[0].slice(cut);
+  let out = raw[0].slice(Math.min(cut, raw[0].match(/^ */)[0].length));
   for (let i = 1; i < raw.length; i++) {
     const prev = raw[i - 1], line = raw[i];
     const cols_ = margin && !isCode(prev) && !isCode(line) ? Math.min(cols, longest + 1) : cols;

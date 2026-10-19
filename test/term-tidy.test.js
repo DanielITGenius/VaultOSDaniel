@@ -74,6 +74,26 @@ test('a list item that ends near the margin is not glued to the next item', () =
   assert.match(got[1], /^2\. Regular/);
 });
 
+test('a drag that starts at the first word still dedents and rejoins hanging indents', () => {
+  const sel = [
+    'Verified backups first — then tighten firewall rules once restore is proven.',
+    '',
+    '  1. Scheduled backups with a clear retention window',
+    '  2. Restore tests on a real file/system (not just “job succeeded”) so the team knows that the copies are really there',
+    '  3. Then firewall/egress hardening so approved apps still work for every team and every office and unnecessary',
+    '     exposure shrinks',
+  ].join('\n');
+  assert.equal(tidySelection(sel, 160), [
+    'Verified backups first — then tighten firewall rules once restore is proven.',
+    '',
+    '1. Scheduled backups with a clear retention window',
+    '2. Restore tests on a real file/system (not just “job succeeded”) so the team knows that the copies are really there',
+    '3. Then firewall/egress hardening so approved apps still work for every team and every office and unnecessary exposure shrinks',
+  ].join('\n'));
+  // A deeper shared indent is real code indentation, not a gutter.
+  assert.equal(tidySelection('def main():\n      print(1)\n      return 2', 120), 'def main():\n      print(1)\n      return 2');
+});
+
 test('Claude Code wrap at the terminal edge still rejoins', () => {
   const cols = 40;
   const sel = '  Run this to restart the board and then\n  check the logs for errors';
