@@ -156,34 +156,41 @@ function copyFlash(pane, msg, bad) {
 // A line that starts like a command (a cmdlet, `$ `, `./`, docker/git/npm...)
 // or ends in `;`/`{` doesn't set the margin, and isn't glued to a command or a
 // finished sentence before it unless that was hard-wrapped at the edge or
-// ended in a pipe. A line
-// holding a 30+ cell token (a path) can overflow the margin, so it doesn't set
-// it either. The margin also applies when Cursor wraps near (not at) the edge
-// of a wide terminal, which leaves more slack than the 4 cells allowed below.
-function tidySelection(text, cols) {
+// ended in a pipe. A line holding a 30+ cell token (a path) can overflow the
+// margin, so it doesn't set it either. The margin also applies when Cursor
+// wraps near (not at) the edge of a wide terminal, which leaves more slack than
+// the 4 cells allowed below.
+//
+// `lead` is how many cells of text sit left of the selection on its first row
+// (a drag started mid-line): that line is wider on screen than its text, and
+// its indent says nothing about the gutter.
+function tidySelection(text, cols, lead = 0) {
   const CMD_START = /^\s*(\$ |> |PS[ >]|[A-Z][a-z]+-[A-Z][A-Za-z]+\b|\.{0,2}\/|~\/|(sudo|docker|git|npm|npx|node|python3?|pip3?|cd|ls|curl|wget|ssh|scp|kubectl|winget|choco|apt|apt-get|brew|systemctl|journalctl|grep|mkdir|rm|cp|mv|chmod|chown|tar|cargo|dotnet|az|aws|gcloud|terraform)\s)/;
   const isCmd = (l) => CMD_START.test(l) || /[;{]\s*$/.test(l) || /^\s*[}\])]/.test(l);
   const raw = text.replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, ''));
   if (raw.length < 2) return raw.join('').trim();
-  const indents = raw.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
+  const ind = (l) => l.match(/^ */)[0].length;
+  const cells = (i) => raw[i].length + (i === 0 ? lead : 0);   // width on screen
+  const rest = raw.slice(1).filter((l) => l.trim()).map(ind);
+  const first = raw[0].trim() && !lead ? [ind(raw[0])] : [];
+  const indents = first.concat(rest);
   let cut = indents.length ? Math.min(...indents) : 0;
   // A drag that starts at the first word leaves that line without the agent's
   // 1-2 cell gutter; take the gutter from the other lines. A deeper shared
   // indent (a code body under `def`) is real indentation and is kept.
-  const rest = indents.slice(1);
-  if (indents[0] === 0 && rest.length && Math.min(...rest) <= 2) cut = Math.min(...rest);
+  if (first[0] === 0 && rest.length && Math.min(...rest) <= 2) cut = Math.min(...rest);
   // A command-looking line mid-sentence ("...health with / Get-Service or...") is prose.
   const cmd = [];
   raw.forEach((l, i) => { cmd[i] = isCmd(l) && (i === 0 || !raw[i - 1].trim() || cmd[i - 1] || /[.:!?]$/.test(raw[i - 1])); });
-  const prose = raw.filter((l, i) => !cmd[i] && !/\S{30}/.test(l));
-  const longest = Math.max(0, ...prose.map((l) => l.length));
-  const margin = longest >= 60 && prose.filter((l) => l.length >= longest - 10).length >= 2;
-  let out = raw[0].slice(Math.min(cut, raw[0].match(/^ */)[0].length));
+  const prose = raw.map((l, i) => i).filter((i) => !cmd[i] && !/\S{30}/.test(raw[i])).map(cells);
+  const longest = Math.max(0, ...prose);
+  const margin = longest >= 60 && prose.filter((w) => w >= longest - 10).length >= 2;
+  let out = lead ? raw[0].trimStart() : raw[0].slice(Math.min(cut, ind(raw[0])));
   for (let i = 1; i < raw.length; i++) {
     const prev = raw[i - 1], line = raw[i];
-    const newCmd = cmd[i] && prev.length < cols - 1 && !/(\||&&)$/.test(prev);
+    const width = cells(i - 1);                         // cells used on screen, indent included
+    const newCmd = cmd[i] && width < cols - 1 && !/(\||&&)$/.test(prev);
     const cols_ = margin && !cmd[i - 1] && !cmd[i] ? Math.min(cols, longest + 1) : cols;
-    const width = prev.length;                          // cells used on screen, indent included
     const firstWord = line.trimStart().split(/\s/)[0].length;
     const wrapped = line.trim() && prev.trim() && !/\\$/.test(prev)
       && line.match(/^ */)[0].length <= cut + 4
@@ -392,6 +399,21 @@ function createTerminal(container, opts = {}) {
   //  - Ctrl+Space belongs to the page (prefix key); xterm would send NUL.
   //  - Ctrl+` / Ctrl+Shift+` / Alt+1…9 belong to the page (dock, new
   //    terminal, switch terminal), not the shell.
+  // Copy the selection, tidied. A drag that starts at the first word leaves the
+  // agent's gutter out, which makes the first line look short of the margin:
+  // put a blank gutter back, or tell the tidy how many cells of text a mid-line
+  // start skipped. The flash says how many lines were joined.
+  const copySelection = (src) => {
+    const sel = term.getSelection();
+    const pos = term.getSelectionPosition();             // 0-based, whatever the typings say
+    const row = pos && pos.start.x > 0 ? term.buffer.active.getLine(pos.start.y) : null;
+    const before = row ? row.translateToString(false, 0, pos.start.x) : '';
+    const out = before.trim() ? tidySelection(sel, term.cols, pos.start.x) : tidySelection(before + sel, term.cols);
+    const lines = (t) => t.replace(/\r/g, '').replace(/^\n+|\n+$/g, '').split('\n').length;
+    const joined = lines(sel) - lines(out);
+    termCopy(out, container, joined > 0 ? `${src} · joined ${joined} line${joined === 1 ? '' : 's'}` : src);
+  };
+
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown') return true;
     if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'Space') return false;
@@ -400,9 +422,8 @@ function createTerminal(container, opts = {}) {
     if (e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code)) return false;   // Alt+N: switch terminal
     if (e.ctrlKey && !e.altKey && k === 'c' && (e.shiftKey || term.hasSelection())) {
       if (term.hasSelection()) {
-        const sel = term.getSelection();
-        termCopy(e.shiftKey ? sel : tidySelection(sel, term.cols), container, e.shiftKey ? 'Ctrl+Shift+C raw' : 'Ctrl+C');
-        if (!e.shiftKey) term.clearSelection();
+        if (e.shiftKey) termCopy(term.getSelection(), container, 'Ctrl+Shift+C raw');
+        else { copySelection('Ctrl+C'); term.clearSelection(); }
       }
       e.preventDefault();
       return false;
@@ -438,7 +459,7 @@ function createTerminal(container, opts = {}) {
     if (e.button !== 0 || !selecting) return;
     selecting = false;
     // The selection settles after this event on a double-click, so read it next tick.
-    setTimeout(() => { if (term.hasSelection()) termCopy(tidySelection(term.getSelection(), term.cols), container, 'mouse select'); }, 0);
+    setTimeout(() => { if (term.hasSelection()) copySelection('mouse select'); }, 0);
   };
   const doc = container.ownerDocument;
   doc.addEventListener('mouseup', onRelease);

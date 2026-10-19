@@ -136,6 +136,21 @@ test('a wrap that lands before a command name mid-sentence keeps the margin', ()
   assert.equal(tidySelection(sel, 90), sel.replace(/\n {2}/g, ' '));
 });
 
+test('a drag that starts mid-line counts the cells left of it', () => {
+  const row0 = '  Password managers reduce reuse and weak credentials by generating unique';
+  const rest = [
+    '  secrets per account, storing them encrypted, and filling them only when',
+    '  needed. That discipline matters even when you check health with Get-Service',
+    '  or refresh tools via winget upgrade --all, because strong unique passwords',
+  ];
+  const start = row0.indexOf('generating');
+  const sel = [row0.slice(start), ...rest].join('\n');
+  const want = [row0.slice(start), ...rest.map((l) => l.trim())].join(' ');
+  assert.equal(tidySelection(sel, 90, start), want);
+  // Without the lead the first line looks 57 cells short and its break is kept.
+  assert.notEqual(tidySelection(sel, 90), want);
+});
+
 test('Claude Code wrap at the terminal edge still rejoins', () => {
   const cols = 40;
   const sel = '  Run this to restart the board and then\n  check the logs for errors';
