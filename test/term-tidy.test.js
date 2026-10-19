@@ -125,6 +125,17 @@ test('a long path or an inline command does not hide the Cursor margin', () => {
   ]);
 });
 
+test('a wrap that lands before a command name mid-sentence keeps the margin', () => {
+  const sel = [
+    'Password managers reduce reuse and weak credentials by generating unique secrets',
+    '  per account, storing them encrypted, and filling them only when needed. That',
+    '  discipline matters even when you check health with Get-Service or refresh tools via',
+    '  winget upgrade --all, because strong unique passwords limit damage if one service',
+    '  or package update path is compromised elsewhere.',
+  ].join('\n');
+  assert.equal(tidySelection(sel, 90), sel.replace(/\n {2}/g, ' '));
+});
+
 test('Claude Code wrap at the terminal edge still rejoins', () => {
   const cols = 40;
   const sel = '  Run this to restart the board and then\n  check the logs for errors';

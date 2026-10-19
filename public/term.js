@@ -172,16 +172,17 @@ function tidySelection(text, cols) {
   // indent (a code body under `def`) is real indentation and is kept.
   const rest = indents.slice(1);
   if (indents[0] === 0 && rest.length && Math.min(...rest) <= 2) cut = Math.min(...rest);
-  const prose = raw.filter((l) => !isCmd(l) && !/\S{30}/.test(l));
+  // A command-looking line mid-sentence ("...health with / Get-Service or...") is prose.
+  const cmd = [];
+  raw.forEach((l, i) => { cmd[i] = isCmd(l) && (i === 0 || !raw[i - 1].trim() || cmd[i - 1] || /[.:!?]$/.test(raw[i - 1])); });
+  const prose = raw.filter((l, i) => !cmd[i] && !/\S{30}/.test(l));
   const longest = Math.max(0, ...prose.map((l) => l.length));
   const margin = longest >= 60 && prose.filter((l) => l.length >= longest - 10).length >= 2;
   let out = raw[0].slice(Math.min(cut, raw[0].match(/^ */)[0].length));
   for (let i = 1; i < raw.length; i++) {
     const prev = raw[i - 1], line = raw[i];
-    // A command-looking line mid-sentence ("...health with / Get-Service or...") is prose.
-    const newCmd = isCmd(line) && (isCmd(prev) || /[.:!?]$/.test(prev))
-      && prev.length < cols - 1 && !/(\||&&)$/.test(prev);
-    const cols_ = margin && !isCmd(prev) && !newCmd ? Math.min(cols, longest + 1) : cols;
+    const newCmd = cmd[i] && prev.length < cols - 1 && !/(\||&&)$/.test(prev);
+    const cols_ = margin && !cmd[i - 1] && !cmd[i] ? Math.min(cols, longest + 1) : cols;
     const width = prev.length;                          // cells used on screen, indent included
     const firstWord = line.trimStart().split(/\s/)[0].length;
     const wrapped = line.trim() && prev.trim() && !/\\$/.test(prev)
