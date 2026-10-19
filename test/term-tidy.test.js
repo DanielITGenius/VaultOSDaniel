@@ -94,6 +94,37 @@ test('a drag that starts at the first word still dedents and rejoins hanging ind
   assert.equal(tidySelection('def main():\n      print(1)\n      return 2', 120), 'def main():\n      print(1)\n      return 2');
 });
 
+// Ben's third Cursor test: bullets wrapped at ~77 in a 90-col terminal, with a
+// path too long for the margin overflowing it, and prose that mentions commands.
+test('a long path or an inline command does not hide the Cursor margin', () => {
+  const sel = [
+    '• Encrypted vaults keep recovery codes and API keys offline from browser',
+    '    memory until you unlock them with a master secret you alone control.',
+    '  • Team sharing grants temporary access without emailing passwords, with',
+    '    revoke controls that cut off contractors the moment a project ends.',
+    '',
+    '  Checking service health is quick when the console is open, and you use',
+    '  Get-Service or winget upgrade --all only after the logins are safe.',
+    '',
+    '  When you edit PowerShell snippets under',
+    '  C:\\Users\\example\\AppData\\Local\\Programs\\Microsoft VS Code\\resources\\app\\extensions\\powershell\\snippets you',
+    '',
+    '  Restart-Service -Name Spooler -Force',
+    '  Get-Service -Name Spooler | Select-Object Status, StartType',
+  ].join('\n');
+  assert.deepEqual(tidySelection(sel, 90).split('\n'), [
+    '• Encrypted vaults keep recovery codes and API keys offline from browser memory until you unlock them with a master secret you alone control.',
+    '• Team sharing grants temporary access without emailing passwords, with revoke controls that cut off contractors the moment a project ends.',
+    '',
+    'Checking service health is quick when the console is open, and you use Get-Service or winget upgrade --all only after the logins are safe.',
+    '',
+    'When you edit PowerShell snippets under C:\\Users\\example\\AppData\\Local\\Programs\\Microsoft VS Code\\resources\\app\\extensions\\powershell\\snippets you',
+    '',
+    'Restart-Service -Name Spooler -Force',
+    'Get-Service -Name Spooler | Select-Object Status, StartType',
+  ]);
+});
+
 test('Claude Code wrap at the terminal edge still rejoins', () => {
   const cols = 40;
   const sel = '  Run this to restart the board and then\n  check the logs for errors';

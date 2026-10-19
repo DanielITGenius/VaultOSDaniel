@@ -153,11 +153,16 @@ function copyFlash(pane, msg, bad) {
 // the terminal edge, so nothing reaches `cols`. Then the wrap width is read off
 // the selection: its longest line, but only when another line ends within 10
 // cells of it (a shared right margin, not one long command among short ones).
-// Only prose counts: a line with flags, pipes or `$x`/`a=b` is likely a real
-// command, so it neither sets the margin nor gets glued by it. The margin also
-// applies when Cursor wraps near (not at) the edge of a wide terminal, which
-// leaves more slack than the 4 cells allowed below.
+// A line that starts like a command (a cmdlet, `$ `, `./`, docker/git/npm...)
+// or ends in `;`/`{` doesn't set the margin, and isn't glued to a command or a
+// finished sentence before it unless that was hard-wrapped at the edge or
+// ended in a pipe. A line
+// holding a 30+ cell token (a path) can overflow the margin, so it doesn't set
+// it either. The margin also applies when Cursor wraps near (not at) the edge
+// of a wide terminal, which leaves more slack than the 4 cells allowed below.
 function tidySelection(text, cols) {
+  const CMD_START = /^\s*(\$ |> |PS[ >]|[A-Z][a-z]+-[A-Z][A-Za-z]+\b|\.{0,2}\/|~\/|(sudo|docker|git|npm|npx|node|python3?|pip3?|cd|ls|curl|wget|ssh|scp|kubectl|winget|choco|apt|apt-get|brew|systemctl|journalctl|grep|mkdir|rm|cp|mv|chmod|chown|tar|cargo|dotnet|az|aws|gcloud|terraform)\s)/;
+  const isCmd = (l) => CMD_START.test(l) || /[;{]\s*$/.test(l) || /^\s*[}\])]/.test(l);
   const raw = text.replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, ''));
   if (raw.length < 2) return raw.join('').trim();
   const indents = raw.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
@@ -167,19 +172,22 @@ function tidySelection(text, cols) {
   // indent (a code body under `def`) is real indentation and is kept.
   const rest = indents.slice(1);
   if (indents[0] === 0 && rest.length && Math.min(...rest) <= 2) cut = Math.min(...rest);
-  const isCode = (l) => /(^|\s)--?[A-Za-z]|[|$=;{}<>`]/.test(l);
-  const prose = raw.filter((l) => !isCode(l));
+  const prose = raw.filter((l) => !isCmd(l) && !/\S{30}/.test(l));
   const longest = Math.max(0, ...prose.map((l) => l.length));
   const margin = longest >= 60 && prose.filter((l) => l.length >= longest - 10).length >= 2;
   let out = raw[0].slice(Math.min(cut, raw[0].match(/^ */)[0].length));
   for (let i = 1; i < raw.length; i++) {
     const prev = raw[i - 1], line = raw[i];
-    const cols_ = margin && !isCode(prev) && !isCode(line) ? Math.min(cols, longest + 1) : cols;
+    // A command-looking line mid-sentence ("...health with / Get-Service or...") is prose.
+    const newCmd = isCmd(line) && (isCmd(prev) || /[.:!?]$/.test(prev))
+      && prev.length < cols - 1 && !/(\||&&)$/.test(prev);
+    const cols_ = margin && !isCmd(prev) && !newCmd ? Math.min(cols, longest + 1) : cols;
     const width = prev.length;                          // cells used on screen, indent included
     const firstWord = line.trimStart().split(/\s/)[0].length;
     const wrapped = line.trim() && prev.trim() && !/\\$/.test(prev)
       && line.match(/^ */)[0].length <= cut + 4
-      && !/^\s*(\d+[.)]|[-*•])\s/.test(line);              // a list item starts a real line
+      && !/^\s*(\d+[.)]|[-*•])\s/.test(line)               // a list item starts a real line
+      && !newCmd;                                         // so does a new command
     // A line that fills to the edge is either a long token (path, URL) broken
     // mid-way, or an ordinary word wrap that happened to land exactly there.
     // Only glue without a space when the last token looks like a path/URL or is
