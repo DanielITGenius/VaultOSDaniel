@@ -85,6 +85,8 @@ Your notes and settings are kept. VaultOS starts again whenever Docker Desktop d
 
 **Port 7684 already in use?** Add `VAULTOS_PORT=7685` (or any free port) to `.env`, run `docker compose up -d`, and open that port instead.
 
+**Build fails with `Connection failed` / `Unable to locate package`?** That is Docker failing to reach Debian's package mirrors while building the image (the missing-package lines are a side effect). Retry after `git pull`. If it still fails: check Docker Desktop is running and can reach the internet; on a work laptop, set the proxy under **Settings → Resources → Proxies** (build-time traffic does not use the `certs/` folder — that is only for the running container). The harmless warning about both `compose.yaml` and `docker-compose.yml` is fine: Compose correctly uses `compose.yaml`.
+
 **Behind a work proxy?** If installing an agent fails with `self-signed certificate in certificate chain`, your network inspects HTTPS. Save its root certificate into the `certs` folder ([certs/README.md](certs/README.md) shows how) and run `docker compose up -d`.
 
 A work OneDrive folder is usually called `OneDrive - <Company>`; use the path File Explorer shows. In OneDrive, right-click the folder and pick **Always keep on this device**, or the container may see empty placeholder files.

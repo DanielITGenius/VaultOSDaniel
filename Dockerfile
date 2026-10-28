@@ -5,7 +5,14 @@
 # builder stage and only the built node_modules reach the runtime image.
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+# HTTPS mirrors: office networks often block outbound HTTP (port 80) from
+# Docker builds while 443 works. Retries cover a flaky first hop. The node
+# bookworm image already ships ca-certificates, so HTTPS apt works before
+# the first apt-get install.
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g; s|http://security.debian.org|https://security.debian.org|g' \
+      /etc/apt/sources.list.d/debian.sources \
+  && printf 'Acquire::Retries "5";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries \
+  && apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 # Build against the headers the base image already ships, so node-gyp never
@@ -21,7 +28,10 @@ WORKDIR /app
 # typefaces; DejaVu and Noto Emoji cover any glyph those two don't.
 # git/less/procps/ca-certificates/python3 make the Workbench terminal a usable shell
 # (python3: skills like diagram-design run self_check.py).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g; s|http://security.debian.org|https://security.debian.org|g' \
+      /etc/apt/sources.list.d/debian.sources \
+  && printf 'Acquire::Retries "5";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries \
+  && apt-get update && apt-get install -y --no-install-recommends \
     chromium fonts-inter fonts-jetbrains-mono fonts-dejavu-core fonts-noto-color-emoji \
     bash git less procps ca-certificates curl tini python3 python3-pip python3-venv \
   && rm -rf /var/lib/apt/lists/*

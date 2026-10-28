@@ -133,6 +133,22 @@ docker run -d --name vaultos --restart unless-stopped -p 127.0.0.1:7684:8080 -v 
 
 Your agent and its sign-in are in the `vaultos-home` volume. Removing that volume signs you out.
 
+## Build cannot reach Debian packages
+
+`docker compose up -d --build` (or `docker build`) needs outbound access to Debian's package mirrors. A failure that looks like packages are missing usually starts with:
+
+```
+Connection failed [IP: … 80]
+Failed to fetch http://deb.debian.org/…
+E: Unable to locate package …
+```
+
+The image build prefers HTTPS mirrors. If the error still appears:
+
+1. Confirm Docker Desktop itself can use the network (a plain `docker pull hello-world` is a quick check).
+2. On a work laptop, configure the proxy in **Docker Desktop → Settings → Resources → Proxies**. Build steps do not see the runtime `HTTP_PROXY` / `certs/` setup below.
+3. Try again on another network (home, phone hotspot) if the office firewall blocks Docker's outbound traffic.
+
 ## Behind a company proxy
 
 If your network uses a proxy, the agent installers and the agent itself may fail to connect. VaultOS terminals pass the container's environment on, so set the standard variables when you start the container:
